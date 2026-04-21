@@ -8,9 +8,6 @@ on:
 permissions:
   contents: write
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     name: 🚀 Build for ${{ matrix.platform }}
@@ -36,11 +33,14 @@ jobs:
             archive: bluetooth_chat_linux.tar.gz
 
     steps:
+      # ---------------------------
+      # Checkout
+      # ---------------------------
       - name: Checkout Repository
         uses: actions/checkout@v4
 
       # ---------------------------
-      # Linux Dependencies
+      # Linux dependencies
       # ---------------------------
       - name: Install Linux Dependencies
         if: matrix.platform == 'linux'
@@ -49,7 +49,7 @@ jobs:
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
 
       # ---------------------------
-      # Windows FIX (CRITICAL)
+      # Windows FIX (CMake + MSVC)
       # ---------------------------
       - name: Setup MSVC (Windows)
         if: matrix.platform == 'windows'
@@ -64,21 +64,33 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Flutter Doctor (Debug)
+      - name: Flutter Doctor
         run: flutter doctor -v
 
+      # ---------------------------
+      # CLEAN FIX (IMPORTANT FOR YOUR ERROR)
+      # ---------------------------
+      - name: Clean Flutter project
+        run: flutter clean
+
+      - name: Get Dependencies
+        run: flutter pub get
+
+      # 🔥 FIX: correct Windows plugin generation
+      - name: Regenerate Windows platform
+        run: flutter create --platforms=windows .
+
+      - name: Precache Windows tools
+        run: flutter precache --windows
+
+      # ---------------------------
+      # Enable desktop
+      # ---------------------------
       - name: Enable Desktop Support
         run: |
           flutter config --enable-linux-desktop
           flutter config --enable-macos-desktop
           flutter config --enable-windows-desktop
-
-      - name: Install Dependencies
-        run: flutter pub get
-
-      # 🔥 IMPORTANT: create missing platform folders safely
-      - name: Ensure Platform Folders Exist
-        run: flutter create .
 
       # ---------------------------
       # BUILD
@@ -87,11 +99,11 @@ jobs:
         run: flutter build ${{ matrix.platform }} --release
 
       # ---------------------------
-      # DEBUG OUTPUT (helps fix future issues)
+      # DEBUG OUTPUT (VERY IMPORTANT)
       # ---------------------------
-      - name: Show Build Output
+      - name: Show build output
         run: |
-          echo "Listing build directory:"
+          echo "Build directory structure:"
           ls -R build || dir build
 
       # ---------------------------
@@ -99,21 +111,18 @@ jobs:
       # ---------------------------
       - name: Package Windows
         if: matrix.platform == 'windows'
-        run: |
-          powershell Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath "${{ matrix.archive }}"
+        run: powershell Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath "${{ matrix.archive }}"
 
       - name: Package macOS
         if: matrix.platform == 'macos'
-        run: |
-          ditto -c -k --sequesterRsrc --keepParent build/macos/Build/Products/Release/*.app ${{ matrix.archive }}
+        run: ditto -c -k --sequesterRsrc --keepParent build/macos/Build/Products/Release/*.app ${{ matrix.archive }}
 
       - name: Package Linux
         if: matrix.platform == 'linux'
-        run: |
-          tar -czvf ${{ matrix.archive }} -C build/linux/x64/release/bundle .
+        run: tar -czvf ${{ matrix.archive }} -C build/linux/x64/release/bundle .
 
       # ---------------------------
-      # UPLOAD ARTIFACT
+      # Upload artifact
       # ---------------------------
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -122,7 +131,7 @@ jobs:
           path: ${{ matrix.archive }}
 
   # ---------------------------
-  # RELEASE (ONLY RUNS ONCE)
+  # SINGLE RELEASE JOB (FIXES RACE + ERRORS)
   # ---------------------------
   release:
     name: 📦 Create Release
@@ -130,12 +139,12 @@ jobs:
     needs: build
 
     steps:
-      - name: Download Artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: List Artifacts
+      - name: Show artifacts
         run: ls -R artifacts
 
       - name: Create GitHub Release
