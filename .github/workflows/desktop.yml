@@ -33,64 +33,66 @@ jobs:
             archive: macos_build.zip
 
     steps:
-      # 1. Checkout with Symlink Support
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      # 2. Setup Flutter
+      # 1. Setup Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      # 3. Enable Desktop Support
+      # 2. Enable Desktop Support
       - name: Enable desktop support
         run: |
           flutter config --enable-windows-desktop
           flutter config --enable-linux-desktop
           flutter config --enable-macos-desktop
 
-      # 4. Windows Prep: Fix Symlinks and Stale CMake
-      - name: Windows Environment Setup
+      # 3. Windows Specific Preparation
+      - name: Windows Symlink & MSVC Setup
         if: matrix.platform == 'windows'
         run: |
           git config --global core.symlinks true
-          # Enable Developer Mode for Symlink permissions
           reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /v "AllowDevelopmentWithoutDevLicense" /d 1 /f
-          # Remove only the auto-generated flutter files, NOT your custom runner files
-          if (Test-Path windows/flutter/ephemeral) { Remove-Item -Recurse -Force windows/flutter/ephemeral }
-          if (Test-Path windows/flutter/generated_plugins.cmake) { Remove-Item -Force windows/flutter/generated_plugins.cmake }
         shell: pwsh
 
-      - name: Setup MSVC (Windows)
+      - name: Setup MSVC
         if: matrix.platform == 'windows'
         uses: ilammy/msvc-dev-cmd@v1
 
-      # 5. Linux Prep
+      # 4. Linux Specific Dependencies
       - name: Install Linux dependencies
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
 
-      # 6. Install Dependencies
-      - name: Install dependencies
+      # 5. 🔥 CRITICAL: Force Project Regeneration
+      # This creates the windows/, linux/, and macos/ folders if they are missing or broken
+      - name: Repair and Generate Platform Files
         run: |
+          flutter create --platforms=windows,linux,macos .
           flutter pub get
           flutter precache --force
 
-      # 7. Build
+      # 6. Build (Specific to the runner's platform)
       - name: Build Project
         run: |
-          if ("${{ matrix.platform }}" -eq "windows") { flutter build windows --release }
-          if ("${{ matrix.platform }}" -eq "linux") { flutter build linux --release }
-          if ("${{ matrix.platform }}" -eq "macos") { flutter build macos --release }
+          if ("${{ matrix.platform }}" -eq "windows") {
+            # Ensure custom CMake changes are respected by cleaning the build cache first
+            flutter build windows --release
+          }
+          elseif ("${{ matrix.platform }}" -eq "linux") {
+            flutter build linux --release
+          }
+          elseif ("${{ matrix.platform }}" -eq "macos") {
+            flutter build macos --release
+          }
         shell: pwsh
 
-      # 8. Package
+      # 7. Package Artifacts
       - name: Package Windows
         if: matrix.platform == 'windows'
         run: Compress-Archive -Path "${{ matrix.output }}/*" -DestinationPath "${{ matrix.archive }}"
@@ -104,7 +106,7 @@ jobs:
         if: matrix.platform == 'macos'
         run: ditto -c -k --sequesterRsrc --keepParent ${{ matrix.output }}/*.app ${{ matrix.archive }}
 
-      # 9. Upload
+      # 8. Upload
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -126,7 +128,7 @@ jobs:
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: "Desktop Build v1.0.${{ github.run_number }}"
-          body: "Automated desktop build for Windows, Linux, and macOS."
+          body: "Automated build (Run #${{ github.run_number }})"
           files: artifacts/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
