@@ -33,53 +33,56 @@ jobs:
             archive: macos_build.zip
 
     steps:
+      # 1. Checkout with Symlink Support
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      # 1. Setup Flutter
+      # 2. Setup Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      # 2. Enable Desktop Support (Must happen before pub get)
+      # 3. Enable Desktop Support
       - name: Enable desktop support
         run: |
           flutter config --enable-windows-desktop
           flutter config --enable-linux-desktop
           flutter config --enable-macos-desktop
 
-      # 3. Windows Specific Fixes (Symlinks & MSVC)
-      - name: Windows Symlink & MSVC Setup
+      # 4. Windows Prep: Fix Symlinks and Stale CMake
+      - name: Windows Environment Setup
         if: matrix.platform == 'windows'
         run: |
           git config --global core.symlinks true
+          # Enable Developer Mode for Symlink permissions
           reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /v "AllowDevelopmentWithoutDevLicense" /d 1 /f
+          # Remove only the auto-generated flutter files, NOT your custom runner files
+          if (Test-Path windows/flutter/ephemeral) { Remove-Item -Recurse -Force windows/flutter/ephemeral }
+          if (Test-Path windows/flutter/generated_plugins.cmake) { Remove-Item -Force windows/flutter/generated_plugins.cmake }
         shell: pwsh
 
-      - name: Setup MSVC
+      - name: Setup MSVC (Windows)
         if: matrix.platform == 'windows'
         uses: ilammy/msvc-dev-cmd@v1
 
-      # 4. Linux Specific Dependencies
+      # 5. Linux Prep
       - name: Install Linux dependencies
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
 
-      # 5. Prepare Project (Re-generate and Get Packages)
-      - name: Generate platform projects
-        run: flutter create --platforms=windows,linux,macos .
-
+      # 6. Install Dependencies
       - name: Install dependencies
-        run: flutter pub get
+        run: |
+          flutter pub get
+          flutter precache --force
 
-      - name: Precache Binaries
-        run: flutter precache --force
-
-      # 6. Build
+      # 7. Build
       - name: Build Project
         run: |
           if ("${{ matrix.platform }}" -eq "windows") { flutter build windows --release }
@@ -87,7 +90,7 @@ jobs:
           if ("${{ matrix.platform }}" -eq "macos") { flutter build macos --release }
         shell: pwsh
 
-      # 7. Package Artifacts
+      # 8. Package
       - name: Package Windows
         if: matrix.platform == 'windows'
         run: Compress-Archive -Path "${{ matrix.output }}/*" -DestinationPath "${{ matrix.archive }}"
@@ -101,7 +104,7 @@ jobs:
         if: matrix.platform == 'macos'
         run: ditto -c -k --sequesterRsrc --keepParent ${{ matrix.output }}/*.app ${{ matrix.archive }}
 
-      # 8. Upload
+      # 9. Upload
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
