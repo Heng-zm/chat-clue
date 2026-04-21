@@ -31,13 +31,19 @@ jobs:
             archive: macos_build.zip
 
     steps:
-      # 1. Setup Git to handle symlinks BEFORE checking out
-      - name: Enable Symlinks in Git
-        run: git config --global core.symlinks true
-        shell: pwsh
+      # Step 1: Force Git and Windows to allow Symlinks and Long Paths
+      - name: Windows OS Prep
+        if: matrix.platform == 'windows'
+        run: |
+          git config --global core.symlinks true
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -Value 1
+          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /v "AllowDevelopmentWithoutDevLicense" /d 1 /f
+        shell: powershell
 
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -45,52 +51,46 @@ jobs:
           channel: stable
           cache: true
 
-      # 2. Windows Specific: Enable Developer Mode & Prep
-      - name: Windows Environment Setup
-        if: matrix.platform == 'windows'
-        run: |
-          # Enable Developer Mode (Allows symlinks without Admin)
-          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /v "AllowDevelopmentWithoutDevLicense" /d 1 /f
-          
-          # Force delete the broken "ephemeral" folder and cached CMake files
-          if (Test-Path windows/flutter/ephemeral) { Remove-Item -Recurse -Force windows/flutter/ephemeral }
-          if (Test-Path windows/flutter/generated_plugins.cmake) { Remove-Item -Force windows/flutter/generated_plugins.cmake }
-        shell: pwsh
-
-      - name: Setup MSVC
-        if: matrix.platform == 'windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
-      # 3. Enable Platforms
       - name: Enable desktop support
         run: |
           flutter config --enable-windows-desktop
           flutter config --enable-linux-desktop
           flutter config --enable-macos-desktop
 
-      # 4. Linux Dependencies
+      - name: Setup MSVC (Windows)
+        if: matrix.platform == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Install Linux dependencies
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
 
-      # 5. 🔥 REBUILD PROJECT STRUCTURE
-      - name: Repair and Generate Platform Files
+      # Step 2: Nuclear Cleanup and Re-link
+      - name: Repair Project Structure
         run: |
+          # If windows folder exists, clean ephemeral links that break on CI
+          if (Test-Path windows/flutter/ephemeral) { Remove-Item -Recurse -Force windows/flutter/ephemeral }
           flutter create --platforms=windows,linux,macos .
           flutter pub get
           flutter precache --force
-
-      # 6. Build
-      - name: Build Project
-        run: |
-          if ("${{ matrix.platform }}" -eq "windows") { flutter build windows --release }
-          elseif ("${{ matrix.platform }}" -eq "linux") { flutter build linux --release }
-          elseif ("${{ matrix.platform }}" -eq "macos") { flutter build macos --release }
         shell: pwsh
 
-      # 7. Package and Upload
+      # Step 3: Platform Specific Build
+      - name: Build Windows
+        if: matrix.platform == 'windows'
+        run: flutter build windows --release
+
+      - name: Build Linux
+        if: matrix.platform == 'linux'
+        run: flutter build linux --release
+
+      - name: Build macOS
+        if: matrix.platform == 'macos'
+        run: flutter build macos --release
+
+      # Step 4: Packaging
       - name: Package Artifacts
         run: |
           if ("${{ matrix.platform }}" -eq "windows") {
