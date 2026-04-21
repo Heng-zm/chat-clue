@@ -1,14 +1,14 @@
-# Windows CMakeLists.txt for BT SecureChat
 cmake_minimum_required(VERSION 3.14)
 project(runner LANGUAGES CXX)
 
+# Set the binary name
 set(BINARY_NAME "bluetooth_chat")
 set(APPLICATION_ID "com.example.bluetooth_chat")
 
 cmake_policy(SET CMP0063 NEW)
 set(CMAKE_INSTALL_RPATH "$ORIGIN/lib")
 
-# 1. DEFINE THE EXECUTABLE FIRST
+# 1. Define the executable FIRST
 add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "main.cpp"
@@ -19,7 +19,8 @@ add_executable(${BINARY_NAME} WIN32
   "runner.exe.manifest"
 )
 
-# 2. NOW INCLUDE PLUGINS (They will now find the 'bluetooth_chat' target)
+# 2. Include the plugins AFTER the executable is defined
+# This allows plugins to find the 'bluetooth_chat' target
 include(${FLUTTER_MANAGED_DIR}/generated_plugins.cmake)
 
 set_property(TARGET ${BINARY_NAME}
@@ -35,6 +36,7 @@ target_compile_definitions(${BINARY_NAME} PRIVATE
 
 apply_standard_settings(${BINARY_NAME})
 
+# 3. Standard Flutter linking
 target_link_libraries(${BINARY_NAME} PRIVATE
   flutter
   flutter_wrapper_app
