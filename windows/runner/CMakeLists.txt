@@ -1,21 +1,14 @@
 # Windows CMakeLists.txt for BT SecureChat
-# Place this at: windows/runner/CMakeLists.txt
-
 cmake_minimum_required(VERSION 3.14)
 project(runner LANGUAGES CXX)
 
-# Standard Flutter Windows runner settings
 set(BINARY_NAME "bluetooth_chat")
 set(APPLICATION_ID "com.example.bluetooth_chat")
 
 cmake_policy(SET CMP0063 NEW)
-
 set(CMAKE_INSTALL_RPATH "$ORIGIN/lib")
 
-# Flutter library and tool builds
-include(${FLUTTER_MANAGED_DIR}/generated_plugins.cmake)
-
-# Application sources
+# 1. DEFINE THE EXECUTABLE FIRST
 add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "main.cpp"
@@ -26,7 +19,9 @@ add_executable(${BINARY_NAME} WIN32
   "runner.exe.manifest"
 )
 
-# Add Bluetooth capability via app.manifest (see runner.exe.manifest below)
+# 2. NOW INCLUDE PLUGINS (They will now find the 'bluetooth_chat' target)
+include(${FLUTTER_MANAGED_DIR}/generated_plugins.cmake)
+
 set_property(TARGET ${BINARY_NAME}
   PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:${BINARY_NAME}>")
 
@@ -46,5 +41,4 @@ target_link_libraries(${BINARY_NAME} PRIVATE
 )
 
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
-
 add_dependencies(${BINARY_NAME} flutter_assemble)
